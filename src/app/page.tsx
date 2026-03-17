@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 type Decision = {
@@ -53,6 +53,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Decision | null>(null);
   const [stats, setStats] = useState<{ topic: string; count: number }[]>([]);
+  const isFirstLoad = useRef(true);
 
   // 통계 로드
   useEffect(() => {
@@ -76,69 +77,125 @@ export default function Home() {
     loadStats();
   }, []);
 
-  const search = useCallback(
-    async (resetPage = true) => {
-      setLoading(true);
-      if (resetPage) setPage(0);
-      const currentPage = resetPage ? 0 : page;
+  // 검색 함수
+  async function doSearch(
+    searchQuery: string,
+    topics: string[],
+    results: string[],
+    from: string,
+    to: string,
+    pageNum: number
+  ) {
+    setLoading(true);
 
-      let q = supabase
-        .from("nhrck_decisions")
-        .select("*", { count: "exact" })
-        .order("decision_date", { ascending: false })
-        .range(currentPage * PAGE_SIZE, (currentPage + 1) * PAGE_SIZE - 1);
+    // 본문 제외 필드만 가져오기 (목록용)
+    let q = supabase
+      .from("nhrck_decisions")
+      .select(
+        "id,doc_id,case_name,case_number,decision_date,committee,decision_type,topic,result,applicant,respondent,victim,order_summary,decision_summary,judgment_summary,order_text,category,view_url",
+        { count: "exact" }
+      )
+      .order("decision_date", { ascending: false })
+      .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
 
-      if (query.trim()) {
-        q = q.or(
-          `case_name.ilike.%${query}%,reason.ilike.%${query}%,decision_summary.ilike.%${query}%,order_text.ilike.%${query}%`
-        );
-      }
+    // 텍스트 검색: 사건명 + 결정요지에서 검색
+    if (searchQuery.trim()) {
+      q = q.or(
+        `case_name.ilike.%${searchQuery.trim()}%,decision_summary.ilike.%${searchQuery.trim()}%,order_summary.ilike.%${searchQuery.trim()}%`
+      );
+    }
 
-      if (topicFilter.length > 0) {
-        q = q.in("topic", topicFilter);
-      }
+    // 주제 필터
+    if (topics.length > 0) {
+      q = q.in("topic", topics);
+    }
 
-      if (resultFilter.length > 0) {
-        q = q.in("result", resultFilter);
-      }
+    // 처리결과 필터
+    if (results.length > 0) {
+      q = q.in("result", results);
+    }
 
-      if (dateFrom) {
-        q = q.gte("decision_date", dateFrom.replace(/-/g, ""));
-      }
-      if (dateTo) {
-        q = q.lte("decision_date", dateTo.replace(/-/g, ""));
-      }
+    // 기간 필터
+    if (from) {
+      q = q.gte("decision_date", from.replace(/-/g, ""));
+    }
+    if (to) {
+      q = q.lte("decision_date", to.replace(/-/g, ""));
+    }
 
-      const { data, count, error } = await q;
-      if (error) {
-        console.error(error);
-      } else {
-        setDecisions(data || []);
-        setTotalCount(count || 0);
-      }
-      setLoading(false);
-    },
-    [query, topicFilter, resultFilter, dateFrom, dateTo, page]
-  );
+    const { data, count, error } = await q;
+    if (error) {
+      console.error("Search error:", error);
+    }
+    setDecisions(data || []);
+    setTotalCount(count || 0);
+    setLoading(false);
+  }
 
+  // 초기 로드
   useEffect(() => {
-    search(true);
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      doSearch("", [], [], "", "", 0);
+    }
   }, []);
 
-  const toggleFilter = (
-    list: string[],
-    setList: (v: string[]) => void,
-    value: string
-  ) => {
-    setList(
-      list.includes(value) ? list.filter((v) => v !== value) : [...list, value]
-    );
-  };
+  // 태그 토글 → 즉시 검색
+  function toggleTopic(t: string) {
+    const next = topicFilter.includes(t)
+      ? topicFilter.filter((v) => v !== t)
+      : [...topicFilter, t];
+    setTopicFilter(next);
+    setPage(0);
+    doSearch(query, next, resultFilter, dateFrom, dateTo, 0);
+  }
+
+  function toggleResult(r: string) {
+    const next = resultFilter.includes(r)
+      ? resultFilter.filter((v) => v !== r)
+      : [...resultFilter, r];
+    setResultFilter(next);
+    setPage(0);
+    doSearch(query, topicFilter, next, dateFrom, dateTo, 0);
+  }
+
+  // 검색 실행
+  function handleSearch() {
+    setPage(0);
+    doSearch(query, topicFilter, resultFilter, dateFrom, dateTo, 0);
+  }
+
+  // 초기화
+  function handleReset() {
+    setQuery("");
+    setTopicFilter([]);
+    setResultFilter([]);
+    setDateFrom("");
+    setDateTo("");
+    setPage(0);
+    doSearch("", [], [], "", "", 0);
+  }
+
+  // 페이지 이동
+  function goPage(p: number) {
+    setPage(p);
+    doSearch(query, topicFilter, resultFilter, dateFrom, dateTo, p);
+  }
+
+  // 상세 조회 (reason 포함)
+  async function loadDetail(d: Decision) {
+    const { data } = await supabase
+      .from("nhrck_decisions")
+      .select("*")
+      .eq("id", d.id)
+      .single();
+    setSelected(data || d);
+  }
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   const formatDate = (d: string) => {
-    if (!d || d.length < 8) return d;
+    if (!d || d.length < 8) return d || "";
     return `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6, 8)}`;
   };
 
@@ -151,7 +208,7 @@ export default function Home() {
             국가인권위원회 결정문 검색
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            전체 {totalCount.toLocaleString()}건의 결정문
+            전체 {totalCount.toLocaleString()}건
           </p>
         </div>
       </header>
@@ -164,12 +221,12 @@ export default function Home() {
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && search(true)}
-              placeholder="사건명, 본문, 결정요지 검색..."
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="사건명, 결정요지, 주문요지 검색..."
               className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
             />
             <button
-              onClick={() => search(true)}
+              onClick={handleSearch}
               disabled={loading}
               className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
             >
@@ -195,7 +252,7 @@ export default function Home() {
             />
           </div>
 
-          {/* 주제 태그 필터 */}
+          {/* 주제 태그 */}
           <div className="mt-3">
             <span className="text-sm text-gray-500 font-medium mr-2">
               주제
@@ -204,7 +261,7 @@ export default function Home() {
               {TOPICS.map((t) => (
                 <button
                   key={t}
-                  onClick={() => toggleFilter(topicFilter, setTopicFilter, t)}
+                  onClick={() => toggleTopic(t)}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     topicFilter.includes(t)
                       ? "bg-blue-600 text-white"
@@ -217,7 +274,7 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 처리결과 태그 필터 */}
+          {/* 처리결과 태그 */}
           <div className="mt-2">
             <span className="text-sm text-gray-500 font-medium mr-2">
               결과
@@ -226,12 +283,10 @@ export default function Home() {
               {RESULTS.map((r) => (
                 <button
                   key={r}
-                  onClick={() =>
-                    toggleFilter(resultFilter, setResultFilter, r)
-                  }
+                  onClick={() => toggleResult(r)}
                   className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                     resultFilter.includes(r)
-                      ? r.includes("인정")
+                      ? r.includes("인정(권고)")
                         ? "bg-green-600 text-white"
                         : r.includes("불인정")
                         ? "bg-red-600 text-white"
@@ -245,23 +300,10 @@ export default function Home() {
             </div>
           </div>
 
-          {/* 필터 적용/초기화 */}
+          {/* 초기화 */}
           <div className="flex gap-2 mt-3">
             <button
-              onClick={() => search(true)}
-              className="px-4 py-1.5 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
-            >
-              필터 적용
-            </button>
-            <button
-              onClick={() => {
-                setQuery("");
-                setTopicFilter([]);
-                setResultFilter([]);
-                setDateFrom("");
-                setDateTo("");
-                setTimeout(() => search(true), 0);
-              }}
+              onClick={handleReset}
               className="px-4 py-1.5 bg-white text-gray-600 border border-gray-300 rounded text-sm hover:bg-gray-50"
             >
               초기화
@@ -269,17 +311,23 @@ export default function Home() {
           </div>
         </div>
 
-        {/* 통계 바 */}
+        {/* 통계 카드 */}
         {stats.length > 0 && (
           <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
             {stats.slice(0, 8).map((s) => (
               <div
                 key={s.topic}
                 onClick={() => {
-                  setTopicFilter([s.topic]);
-                  setTimeout(() => search(true), 0);
+                  const next = [s.topic];
+                  setTopicFilter(next);
+                  setPage(0);
+                  doSearch(query, next, resultFilter, dateFrom, dateTo, 0);
                 }}
-                className="flex-shrink-0 bg-white border border-gray-200 rounded-lg px-3 py-2 cursor-pointer hover:border-blue-400 transition-colors"
+                className={`flex-shrink-0 border rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+                  topicFilter.includes(s.topic)
+                    ? "bg-blue-50 border-blue-400"
+                    : "bg-white border-gray-200 hover:border-blue-300"
+                }`}
               >
                 <div className="text-xs text-gray-500">{s.topic}</div>
                 <div className="text-lg font-bold text-gray-900">
@@ -290,12 +338,12 @@ export default function Home() {
           </div>
         )}
 
-        {/* 검색 결과 목록 */}
+        {/* 검색 결과 */}
         <div className="space-y-2">
           {decisions.map((d) => (
             <div
               key={d.id}
-              onClick={() => setSelected(d)}
+              onClick={() => loadDetail(d)}
               className="bg-white border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
             >
               <div className="flex items-start justify-between gap-4">
@@ -310,9 +358,9 @@ export default function Home() {
                     <span>|</span>
                     <span>{d.committee}</span>
                   </div>
-                  {d.order_summary && (
+                  {(d.order_summary || d.decision_summary) && (
                     <p className="mt-2 text-sm text-gray-600 line-clamp-2">
-                      {d.order_summary}
+                      {d.decision_summary || d.order_summary}
                     </p>
                   )}
                 </div>
@@ -325,7 +373,7 @@ export default function Home() {
                   {d.result && (
                     <span
                       className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        d.result.includes("인정")
+                        d.result.includes("인정(권고)")
                           ? "bg-green-50 text-green-700"
                           : d.result.includes("불인정")
                           ? "bg-red-50 text-red-700"
@@ -351,14 +399,18 @@ export default function Home() {
           </div>
         )}
 
+        {/* 로딩 */}
+        {loading && (
+          <div className="text-center py-20 text-gray-400">
+            <p className="text-lg">검색 중...</p>
+          </div>
+        )}
+
         {/* 페이지네이션 */}
         {totalPages > 1 && (
           <div className="flex items-center justify-center gap-2 mt-6">
             <button
-              onClick={() => {
-                setPage((p) => Math.max(0, p - 1));
-                setTimeout(() => search(false), 0);
-              }}
+              onClick={() => goPage(Math.max(0, page - 1))}
               disabled={page === 0}
               className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-30 hover:bg-gray-50"
             >
@@ -368,10 +420,7 @@ export default function Home() {
               {page + 1} / {totalPages}
             </span>
             <button
-              onClick={() => {
-                setPage((p) => Math.min(totalPages - 1, p + 1));
-                setTimeout(() => search(false), 0);
-              }}
+              onClick={() => goPage(Math.min(totalPages - 1, page + 1))}
               disabled={page >= totalPages - 1}
               className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-30 hover:bg-gray-50"
             >
@@ -396,7 +445,7 @@ export default function Home() {
                 <h2 className="text-lg font-bold text-gray-900">
                   {selected.case_name}
                 </h2>
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500">
+                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 flex-wrap">
                   <span>{selected.case_number}</span>
                   <span>|</span>
                   <span>{formatDate(selected.decision_date)}</span>
@@ -408,7 +457,7 @@ export default function Home() {
                   {selected.result && (
                     <span
                       className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        selected.result.includes("인정")
+                        selected.result.includes("인정(권고)")
                           ? "bg-green-50 text-green-700"
                           : selected.result.includes("불인정")
                           ? "bg-red-50 text-red-700"
@@ -429,7 +478,6 @@ export default function Home() {
             </div>
 
             <div className="px-6 py-4 space-y-4 text-sm">
-              {/* 기본 정보 */}
               <div className="grid grid-cols-2 gap-2 text-sm">
                 {selected.committee && (
                   <div>
@@ -457,7 +505,6 @@ export default function Home() {
                 )}
               </div>
 
-              {/* 주문 */}
               {selected.order_text && (
                 <section>
                   <h3 className="font-bold text-gray-800 mb-1">주문</h3>
@@ -467,7 +514,6 @@ export default function Home() {
                 </section>
               )}
 
-              {/* 결정요지 */}
               {selected.decision_summary && (
                 <section>
                   <h3 className="font-bold text-gray-800 mb-1">결정요지</h3>
@@ -477,7 +523,6 @@ export default function Home() {
                 </section>
               )}
 
-              {/* 판단요지 */}
               {selected.judgment_summary && (
                 <section>
                   <h3 className="font-bold text-gray-800 mb-1">판단요지</h3>
@@ -487,7 +532,6 @@ export default function Home() {
                 </section>
               )}
 
-              {/* 이유 (전문) */}
               {selected.reason && (
                 <section>
                   <h3 className="font-bold text-gray-800 mb-1">이유</h3>
@@ -497,10 +541,13 @@ export default function Home() {
                 </section>
               )}
 
-              {/* 원본 링크 */}
               {selected.view_url && (
                 <a
-                  href={selected.view_url}
+                  href={
+                    selected.view_url.startsWith("http")
+                      ? selected.view_url
+                      : `https://www.law.go.kr${selected.view_url}`
+                  }
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-block px-4 py-2 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
