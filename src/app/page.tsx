@@ -27,19 +27,39 @@ type Decision = {
 };
 
 const TOPICS = [
-  "성희롱",
-  "성폭력",
-  "성차별",
-  "괴롭힘",
-  "장애차별",
-  "인권침해",
-  "차별",
-  "기타",
+  { label: "성희롱", color: "bg-rose-50 text-rose-600 border-rose-200" },
+  { label: "성폭력", color: "bg-red-50 text-red-600 border-red-200" },
+  { label: "성차별", color: "bg-orange-50 text-orange-600 border-orange-200" },
+  { label: "괴롭힘", color: "bg-amber-50 text-amber-600 border-amber-200" },
+  { label: "장애차별", color: "bg-violet-50 text-violet-600 border-violet-200" },
+  { label: "인권침해", color: "bg-blue-50 text-blue-600 border-blue-200" },
+  { label: "차별", color: "bg-cyan-50 text-cyan-600 border-cyan-200" },
+  { label: "기타", color: "bg-gray-50 text-gray-500 border-gray-200" },
 ];
 
-const RESULTS = ["인정(권고)", "불인정(기각)", "각하", "조정", "의견표명", "기타"];
+const RESULTS = [
+  { label: "인정(권고)", color: "bg-emerald-50 text-emerald-600 border-emerald-200" },
+  { label: "불인정(기각)", color: "bg-red-50 text-red-500 border-red-200" },
+  { label: "각하", color: "bg-gray-50 text-gray-500 border-gray-200" },
+  { label: "조정", color: "bg-sky-50 text-sky-600 border-sky-200" },
+  { label: "의견표명", color: "bg-purple-50 text-purple-600 border-purple-200" },
+  { label: "기타", color: "bg-gray-50 text-gray-500 border-gray-200" },
+];
 
 const PAGE_SIZE = 20;
+
+function getTopicStyle(topic: string) {
+  return TOPICS.find((t) => t.label === topic)?.color || "bg-gray-50 text-gray-500 border-gray-200";
+}
+
+function getResultStyle(result: string) {
+  if (result.includes("인정(권고)")) return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (result.includes("불인정")) return "bg-red-50 text-red-500 border-red-200";
+  if (result.includes("각하")) return "bg-gray-100 text-gray-500 border-gray-200";
+  if (result.includes("조정")) return "bg-sky-50 text-sky-600 border-sky-200";
+  if (result.includes("의견표명")) return "bg-purple-50 text-purple-600 border-purple-200";
+  return "bg-gray-50 text-gray-500 border-gray-200";
+}
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -55,7 +75,6 @@ export default function Home() {
   const [stats, setStats] = useState<{ topic: string; count: number }[]>([]);
   const isFirstLoad = useRef(true);
 
-  // 통계 로드
   useEffect(() => {
     async function loadStats() {
       const { data } = await supabase
@@ -68,71 +87,46 @@ export default function Home() {
           const t = d.topic || "기타";
           counts[t] = (counts[t] || 0) + 1;
         });
-        const sorted = Object.entries(counts)
-          .map(([topic, count]) => ({ topic, count }))
-          .sort((a, b) => b.count - a.count);
-        setStats(sorted);
+        setStats(
+          Object.entries(counts)
+            .map(([topic, count]) => ({ topic, count }))
+            .sort((a, b) => b.count - a.count)
+        );
       }
     }
     loadStats();
   }, []);
 
-  // 검색 함수
   async function doSearch(
-    searchQuery: string,
-    topics: string[],
-    results: string[],
-    from: string,
-    to: string,
-    pageNum: number
+    q: string, topics: string[], results: string[],
+    from: string, to: string, p: number
   ) {
     setLoading(true);
-
-    // 본문 제외 필드만 가져오기 (목록용)
-    let q = supabase
+    let query_builder = supabase
       .from("nhrck_decisions")
       .select(
         "id,doc_id,case_name,case_number,decision_date,committee,decision_type,topic,result,applicant,respondent,victim,order_summary,decision_summary,judgment_summary,order_text,category,view_url",
         { count: "exact" }
       )
       .order("decision_date", { ascending: false })
-      .range(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE - 1);
+      .range(p * PAGE_SIZE, (p + 1) * PAGE_SIZE - 1);
 
-    // 텍스트 검색: 사건명 + 결정요지에서 검색
-    if (searchQuery.trim()) {
-      q = q.or(
-        `case_name.ilike.%${searchQuery.trim()}%,decision_summary.ilike.%${searchQuery.trim()}%,order_summary.ilike.%${searchQuery.trim()}%`
+    if (q.trim()) {
+      query_builder = query_builder.or(
+        `case_name.ilike.%${q.trim()}%,decision_summary.ilike.%${q.trim()}%,order_summary.ilike.%${q.trim()}%`
       );
     }
+    if (topics.length > 0) query_builder = query_builder.in("topic", topics);
+    if (results.length > 0) query_builder = query_builder.in("result", results);
+    if (from) query_builder = query_builder.gte("decision_date", from.replace(/-/g, ""));
+    if (to) query_builder = query_builder.lte("decision_date", to.replace(/-/g, ""));
 
-    // 주제 필터
-    if (topics.length > 0) {
-      q = q.in("topic", topics);
-    }
-
-    // 처리결과 필터
-    if (results.length > 0) {
-      q = q.in("result", results);
-    }
-
-    // 기간 필터
-    if (from) {
-      q = q.gte("decision_date", from.replace(/-/g, ""));
-    }
-    if (to) {
-      q = q.lte("decision_date", to.replace(/-/g, ""));
-    }
-
-    const { data, count, error } = await q;
-    if (error) {
-      console.error("Search error:", error);
-    }
+    const { data, count } = await query_builder;
     setDecisions(data || []);
     setTotalCount(count || 0);
     setLoading(false);
   }
 
-  // 초기 로드
   useEffect(() => {
     if (isFirstLoad.current) {
       isFirstLoad.current = false;
@@ -140,32 +134,25 @@ export default function Home() {
     }
   }, []);
 
-  // 태그 토글 → 즉시 검색
   function toggleTopic(t: string) {
-    const next = topicFilter.includes(t)
-      ? topicFilter.filter((v) => v !== t)
-      : [...topicFilter, t];
+    const next = topicFilter.includes(t) ? topicFilter.filter((v) => v !== t) : [...topicFilter, t];
     setTopicFilter(next);
     setPage(0);
     doSearch(query, next, resultFilter, dateFrom, dateTo, 0);
   }
 
   function toggleResult(r: string) {
-    const next = resultFilter.includes(r)
-      ? resultFilter.filter((v) => v !== r)
-      : [...resultFilter, r];
+    const next = resultFilter.includes(r) ? resultFilter.filter((v) => v !== r) : [...resultFilter, r];
     setResultFilter(next);
     setPage(0);
     doSearch(query, topicFilter, next, dateFrom, dateTo, 0);
   }
 
-  // 검색 실행
   function handleSearch() {
     setPage(0);
     doSearch(query, topicFilter, resultFilter, dateFrom, dateTo, 0);
   }
 
-  // 초기화
   function handleReset() {
     setQuery("");
     setTopicFilter([]);
@@ -176,212 +163,194 @@ export default function Home() {
     doSearch("", [], [], "", "", 0);
   }
 
-  // 페이지 이동
   function goPage(p: number) {
     setPage(p);
     doSearch(query, topicFilter, resultFilter, dateFrom, dateTo, p);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  // 상세 조회 (reason 포함)
   async function loadDetail(d: Decision) {
+    setSelected(d);
     const { data } = await supabase
       .from("nhrck_decisions")
       .select("*")
       .eq("id", d.id)
       .single();
-    setSelected(data || d);
+    if (data) setSelected(data);
   }
 
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   const formatDate = (d: string) => {
     if (!d || d.length < 8) return d || "";
-    return `${d.slice(0, 4)}.${d.slice(4, 6)}.${d.slice(6, 8)}`;
+    return `${d.slice(0, 4)}. ${d.slice(4, 6)}. ${d.slice(6, 8)}`;
   };
 
+  const totalAll = stats.reduce((a, b) => a + b.count, 0);
+
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen bg-[#f7f8fa]">
       {/* 헤더 */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-40">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <h1 className="text-xl font-bold text-gray-900">
-            국가인권위원회 결정문 검색
-          </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            전체 {totalCount.toLocaleString()}건
-          </p>
+      <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 sticky top-0 z-40">
+        <div className="max-w-[800px] mx-auto px-5 py-5 flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-bold tracking-tight text-gray-900">
+              인권위 결정문
+            </h1>
+            <p className="text-[13px] text-gray-400 mt-0.5 font-medium">
+              국가인권위원회 결정례 검색
+            </p>
+          </div>
+          <div className="text-right">
+            <span className="text-[28px] font-bold text-gray-900 tracking-tight">
+              {totalAll > 0 ? totalAll.toLocaleString() : "—"}
+            </span>
+            <span className="text-[13px] text-gray-400 ml-1">건</span>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* 검색바 */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-4">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="사건명, 결정요지, 주문요지 검색..."
-              className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-            />
-            <button
-              onClick={handleSearch}
-              disabled={loading}
-              className="px-6 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
-            >
-              {loading ? "검색 중..." : "검색"}
-            </button>
+      <main className="max-w-[800px] mx-auto px-5 py-8">
+        {/* 검색 */}
+        <div className="relative mb-6">
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+            placeholder="사건명, 결정요지로 검색하세요"
+            className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-[15px] placeholder:text-gray-300 transition-shadow"
+          />
+          <button
+            onClick={handleSearch}
+            disabled={loading}
+            className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-[14px] font-semibold hover:bg-gray-800 disabled:opacity-40 transition-colors"
+          >
+            검색
+          </button>
+        </div>
+
+        {/* 필터 영역 */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-6 shadow-sm">
+          {/* 주제 */}
+          <div className="mb-4">
+            <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">
+              주제
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {TOPICS.map((t) => (
+                <button
+                  key={t.label}
+                  onClick={() => toggleTopic(t.label)}
+                  className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium border transition-all ${
+                    topicFilter.includes(t.label)
+                      ? "bg-gray-900 text-white border-gray-900 shadow-sm"
+                      : `${t.color} hover:shadow-sm`
+                  }`}
+                >
+                  {t.label}
+                  {stats.find((s) => s.topic === t.label) && (
+                    <span className={`ml-1.5 text-[11px] ${topicFilter.includes(t.label) ? "text-gray-400" : "opacity-50"}`}>
+                      {stats.find((s) => s.topic === t.label)?.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* 기간 필터 */}
-          <div className="flex items-center gap-2 mt-3 text-sm">
-            <span className="text-gray-500 font-medium">기간</span>
+          {/* 처리결과 */}
+          <div className="mb-4">
+            <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5">
+              처리결과
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {RESULTS.map((r) => (
+                <button
+                  key={r.label}
+                  onClick={() => toggleResult(r.label)}
+                  className={`px-3.5 py-1.5 rounded-full text-[13px] font-medium border transition-all ${
+                    resultFilter.includes(r.label)
+                      ? "bg-gray-900 text-white border-gray-900 shadow-sm"
+                      : `${r.color} hover:shadow-sm`
+                  }`}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 기간 */}
+          <div className="flex items-center gap-3">
+            <p className="text-[12px] font-semibold text-gray-400 uppercase tracking-wider">
+              기간
+            </p>
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+              onChange={(e) => { setDateFrom(e.target.value); }}
+              className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-[13px] text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-300"
             />
-            <span className="text-gray-400">~</span>
+            <span className="text-gray-300 text-sm">—</span>
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="px-2 py-1.5 border border-gray-300 rounded text-sm"
+              onChange={(e) => { setDateTo(e.target.value); }}
+              className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-[13px] text-gray-600 focus:outline-none focus:ring-1 focus:ring-gray-300"
             />
-          </div>
-
-          {/* 주제 태그 */}
-          <div className="mt-3">
-            <span className="text-sm text-gray-500 font-medium mr-2">
-              주제
-            </span>
-            <div className="inline-flex flex-wrap gap-1.5 mt-1">
-              {TOPICS.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => toggleTopic(t)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    topicFilter.includes(t)
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 처리결과 태그 */}
-          <div className="mt-2">
-            <span className="text-sm text-gray-500 font-medium mr-2">
-              결과
-            </span>
-            <div className="inline-flex flex-wrap gap-1.5 mt-1">
-              {RESULTS.map((r) => (
-                <button
-                  key={r}
-                  onClick={() => toggleResult(r)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    resultFilter.includes(r)
-                      ? r.includes("인정(권고)")
-                        ? "bg-green-600 text-white"
-                        : r.includes("불인정")
-                        ? "bg-red-600 text-white"
-                        : "bg-purple-600 text-white"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                  }`}
-                >
-                  {r}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 초기화 */}
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={handleReset}
-              className="px-4 py-1.5 bg-white text-gray-600 border border-gray-300 rounded text-sm hover:bg-gray-50"
-            >
-              초기화
-            </button>
+            {(topicFilter.length > 0 || resultFilter.length > 0 || dateFrom || dateTo || query) && (
+              <button
+                onClick={handleReset}
+                className="ml-auto text-[13px] text-gray-400 hover:text-gray-600 font-medium transition-colors"
+              >
+                초기화
+              </button>
+            )}
           </div>
         </div>
 
-        {/* 통계 카드 */}
-        {stats.length > 0 && (
-          <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-            {stats.slice(0, 8).map((s) => (
-              <div
-                key={s.topic}
-                onClick={() => {
-                  const next = [s.topic];
-                  setTopicFilter(next);
-                  setPage(0);
-                  doSearch(query, next, resultFilter, dateFrom, dateTo, 0);
-                }}
-                className={`flex-shrink-0 border rounded-lg px-3 py-2 cursor-pointer transition-colors ${
-                  topicFilter.includes(s.topic)
-                    ? "bg-blue-50 border-blue-400"
-                    : "bg-white border-gray-200 hover:border-blue-300"
-                }`}
-              >
-                <div className="text-xs text-gray-500">{s.topic}</div>
-                <div className="text-lg font-bold text-gray-900">
-                  {s.count}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        {/* 결과 헤더 */}
+        <div className="flex items-center justify-between mb-3 px-1">
+          <p className="text-[13px] text-gray-400 font-medium">
+            {loading ? "검색 중..." : `${totalCount.toLocaleString()}건`}
+          </p>
+        </div>
 
-        {/* 검색 결과 */}
-        <div className="space-y-2">
+        {/* 결과 목록 */}
+        <div className="space-y-3">
           {decisions.map((d) => (
             <div
               key={d.id}
               onClick={() => loadDetail(d)}
-              className="bg-white border border-gray-200 rounded-lg p-4 cursor-pointer hover:border-blue-300 hover:shadow-sm transition-all"
+              className="bg-white rounded-2xl border border-gray-100 p-5 cursor-pointer hover:shadow-md hover:border-gray-200 transition-all duration-200 group"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <h3 className="font-medium text-gray-900 truncate">
+                  <h3 className="text-[15px] font-semibold text-gray-900 group-hover:text-blue-600 transition-colors leading-snug">
                     {d.case_name}
                   </h3>
-                  <div className="flex items-center gap-2 mt-1.5 text-xs text-gray-500">
-                    <span>{d.case_number}</span>
-                    <span>|</span>
+                  <div className="flex items-center gap-1.5 mt-2 text-[12px] text-gray-400">
+                    <span className="font-medium">{d.case_number}</span>
+                    <span>·</span>
                     <span>{formatDate(d.decision_date)}</span>
-                    <span>|</span>
+                    <span>·</span>
                     <span>{d.committee}</span>
                   </div>
-                  {(d.order_summary || d.decision_summary) && (
-                    <p className="mt-2 text-sm text-gray-600 line-clamp-2">
+                  {(d.decision_summary || d.order_summary) && (
+                    <p className="mt-3 text-[13px] text-gray-500 leading-relaxed line-clamp-2">
                       {d.decision_summary || d.order_summary}
                     </p>
                   )}
                 </div>
-                <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+                <div className="flex flex-col items-end gap-2 flex-shrink-0 pt-0.5">
                   {d.topic && (
-                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">
+                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${getTopicStyle(d.topic)}`}>
                       {d.topic}
                     </span>
                   )}
                   {d.result && (
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        d.result.includes("인정(권고)")
-                          ? "bg-green-50 text-green-700"
-                          : d.result.includes("불인정")
-                          ? "bg-red-50 text-red-700"
-                          : d.result.includes("각하")
-                          ? "bg-gray-100 text-gray-600"
-                          : "bg-purple-50 text-purple-700"
-                      }`}
-                    >
+                    <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${getResultStyle(d.result)}`}>
                       {d.result}
                     </span>
                   )}
@@ -391,40 +360,53 @@ export default function Home() {
           ))}
         </div>
 
-        {/* 결과 없음 */}
+        {/* 빈 결과 */}
         {!loading && decisions.length === 0 && (
-          <div className="text-center py-20 text-gray-400">
-            <p className="text-lg">검색 결과가 없습니다</p>
-            <p className="text-sm mt-1">다른 키워드나 필터를 시도해보세요</p>
-          </div>
-        )}
-
-        {/* 로딩 */}
-        {loading && (
-          <div className="text-center py-20 text-gray-400">
-            <p className="text-lg">검색 중...</p>
+          <div className="text-center py-24">
+            <div className="text-5xl mb-4">🔍</div>
+            <p className="text-[16px] font-semibold text-gray-400">
+              검색 결과가 없습니다
+            </p>
+            <p className="text-[13px] text-gray-300 mt-1">
+              다른 키워드나 필터를 시도해보세요
+            </p>
           </div>
         )}
 
         {/* 페이지네이션 */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-6">
+          <div className="flex items-center justify-center gap-1 mt-8">
             <button
               onClick={() => goPage(Math.max(0, page - 1))}
               disabled={page === 0}
-              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-30 hover:bg-gray-50"
+              className="w-10 h-10 rounded-xl border border-gray-200 text-[14px] text-gray-500 disabled:opacity-20 hover:bg-gray-50 transition-colors flex items-center justify-center"
             >
-              이전
+              ‹
             </button>
-            <span className="text-sm text-gray-500">
-              {page + 1} / {totalPages}
-            </span>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              const start = Math.max(0, Math.min(page - 2, totalPages - 5));
+              const p = start + i;
+              if (p >= totalPages) return null;
+              return (
+                <button
+                  key={p}
+                  onClick={() => goPage(p)}
+                  className={`w-10 h-10 rounded-xl text-[14px] font-medium transition-colors flex items-center justify-center ${
+                    p === page
+                      ? "bg-gray-900 text-white"
+                      : "text-gray-400 hover:bg-gray-100"
+                  }`}
+                >
+                  {p + 1}
+                </button>
+              );
+            })}
             <button
               onClick={() => goPage(Math.min(totalPages - 1, page + 1))}
               disabled={page >= totalPages - 1}
-              className="px-3 py-1.5 border border-gray-300 rounded text-sm disabled:opacity-30 hover:bg-gray-50"
+              className="w-10 h-10 rounded-xl border border-gray-200 text-[14px] text-gray-500 disabled:opacity-20 hover:bg-gray-50 transition-colors flex items-center justify-center"
             >
-              다음
+              ›
             </button>
           </div>
         )}
@@ -433,91 +415,87 @@ export default function Home() {
       {/* 상세 모달 */}
       {selected && (
         <div
-          className="fixed inset-0 z-50 bg-black/50 flex items-start justify-center pt-10 px-4"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-start justify-center pt-8 px-4"
           onClick={() => setSelected(null)}
         >
           <div
-            className="bg-white rounded-xl shadow-xl max-w-3xl w-full max-h-[85vh] overflow-y-auto"
+            className="bg-white rounded-3xl shadow-2xl max-w-[720px] w-full max-h-[88vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900">
-                  {selected.case_name}
-                </h2>
-                <div className="flex items-center gap-2 mt-1 text-sm text-gray-500 flex-wrap">
-                  <span>{selected.case_number}</span>
-                  <span>|</span>
-                  <span>{formatDate(selected.decision_date)}</span>
-                  {selected.topic && (
-                    <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">
-                      {selected.topic}
-                    </span>
-                  )}
-                  {selected.result && (
-                    <span
-                      className={`px-2 py-0.5 rounded text-xs font-medium ${
-                        selected.result.includes("인정(권고)")
-                          ? "bg-green-50 text-green-700"
-                          : selected.result.includes("불인정")
-                          ? "bg-red-50 text-red-700"
-                          : "bg-purple-50 text-purple-700"
-                      }`}
-                    >
-                      {selected.result}
-                    </span>
-                  )}
+            {/* 모달 헤더 */}
+            <div className="px-7 py-5 border-b border-gray-100 flex-shrink-0">
+              <div className="flex items-start justify-between">
+                <div className="flex-1 pr-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    {selected.topic && (
+                      <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${getTopicStyle(selected.topic)}`}>
+                        {selected.topic}
+                      </span>
+                    )}
+                    {selected.result && (
+                      <span className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border ${getResultStyle(selected.result)}`}>
+                        {selected.result}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-[18px] font-bold text-gray-900 leading-snug">
+                    {selected.case_name}
+                  </h2>
+                  <p className="text-[13px] text-gray-400 mt-1.5 font-medium">
+                    {selected.case_number} · {formatDate(selected.decision_date)}
+                  </p>
                 </div>
+                <button
+                  onClick={() => setSelected(null)}
+                  className="w-9 h-9 rounded-full bg-gray-100 text-gray-400 hover:bg-gray-200 hover:text-gray-600 flex items-center justify-center transition-colors text-lg flex-shrink-0"
+                >
+                  ✕
+                </button>
               </div>
-              <button
-                onClick={() => setSelected(null)}
-                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-              >
-                &times;
-              </button>
             </div>
 
-            <div className="px-6 py-4 space-y-4 text-sm">
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                {selected.committee && (
-                  <div>
-                    <span className="text-gray-500">위원회: </span>
-                    {selected.committee}
-                  </div>
-                )}
-                {selected.decision_type && (
-                  <div>
-                    <span className="text-gray-500">결정유형: </span>
-                    {selected.decision_type}
-                  </div>
-                )}
-                {selected.applicant && (
-                  <div>
-                    <span className="text-gray-500">신청인: </span>
-                    {selected.applicant}
-                  </div>
-                )}
-                {selected.respondent && (
-                  <div>
-                    <span className="text-gray-500">피신청인: </span>
-                    {selected.respondent}
-                  </div>
+            {/* 모달 본문 */}
+            <div className="overflow-y-auto flex-1 px-7 py-5 space-y-5">
+              {/* 기본 정보 */}
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2">
+                {[
+                  ["위원회", selected.committee],
+                  ["결정유형", selected.decision_type],
+                  ["신청인", selected.applicant],
+                  ["피신청인", selected.respondent],
+                  ["피해자", selected.victim],
+                  ["분류", selected.category],
+                ].map(
+                  ([label, value]) =>
+                    value && (
+                      <div key={label as string} className="flex text-[13px]">
+                        <span className="text-gray-400 w-16 flex-shrink-0 font-medium">
+                          {label}
+                        </span>
+                        <span className="text-gray-700">{value}</span>
+                      </div>
+                    )
                 )}
               </div>
 
+              {/* 주문 */}
               {selected.order_text && (
                 <section>
-                  <h3 className="font-bold text-gray-800 mb-1">주문</h3>
-                  <p className="text-gray-700 whitespace-pre-wrap bg-blue-50 p-3 rounded">
+                  <h3 className="text-[13px] font-bold text-gray-900 mb-2">
+                    주문
+                  </h3>
+                  <div className="text-[14px] text-gray-700 whitespace-pre-wrap bg-blue-50/50 border border-blue-100 p-4 rounded-2xl leading-relaxed">
                     {selected.order_text}
-                  </p>
+                  </div>
                 </section>
               )}
 
               {selected.decision_summary && (
                 <section>
-                  <h3 className="font-bold text-gray-800 mb-1">결정요지</h3>
-                  <p className="text-gray-700 whitespace-pre-wrap">
+                  <h3 className="text-[13px] font-bold text-gray-900 mb-2">
+                    결정요지
+                  </h3>
+                  <p className="text-[14px] text-gray-600 whitespace-pre-wrap leading-relaxed">
                     {selected.decision_summary}
                   </p>
                 </section>
@@ -525,8 +503,10 @@ export default function Home() {
 
               {selected.judgment_summary && (
                 <section>
-                  <h3 className="font-bold text-gray-800 mb-1">판단요지</h3>
-                  <p className="text-gray-700 whitespace-pre-wrap">
+                  <h3 className="text-[13px] font-bold text-gray-900 mb-2">
+                    판단요지
+                  </h3>
+                  <p className="text-[14px] text-gray-600 whitespace-pre-wrap leading-relaxed">
                     {selected.judgment_summary}
                   </p>
                 </section>
@@ -534,8 +514,10 @@ export default function Home() {
 
               {selected.reason && (
                 <section>
-                  <h3 className="font-bold text-gray-800 mb-1">이유</h3>
-                  <div className="text-gray-700 whitespace-pre-wrap text-xs leading-relaxed max-h-96 overflow-y-auto bg-gray-50 p-3 rounded">
+                  <h3 className="text-[13px] font-bold text-gray-900 mb-2">
+                    이유
+                  </h3>
+                  <div className="text-[13px] text-gray-600 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto bg-gray-50 border border-gray-100 p-4 rounded-2xl">
                     {selected.reason}
                   </div>
                 </section>
@@ -550,9 +532,9 @@ export default function Home() {
                   }
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-block px-4 py-2 bg-gray-800 text-white rounded text-sm hover:bg-gray-900"
+                  className="inline-flex items-center gap-2 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-[13px] font-semibold hover:bg-gray-800 transition-colors"
                 >
-                  원본 보기
+                  원본 보기 ↗
                 </a>
               )}
             </div>
