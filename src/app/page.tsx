@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import { OrbInput } from "@/components/ui/animated-input";
 
 type Decision = {
   id: number;
@@ -212,22 +213,12 @@ export default function Home() {
 
       <main className="max-w-[800px] mx-auto px-5 py-8">
         {/* 검색 */}
-        <div className="relative mb-6">
-          <input
-            type="text"
+        <div className="mb-6">
+          <OrbInput
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="사건명, 결정요지로 검색하세요"
-            className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent text-[15px] placeholder:text-gray-300 transition-shadow"
+            onChange={setQuery}
+            onSubmit={handleSearch}
           />
-          <button
-            onClick={handleSearch}
-            disabled={loading}
-            className="absolute right-2 top-1/2 -translate-y-1/2 px-5 py-2.5 bg-gray-900 text-white rounded-xl text-[14px] font-semibold hover:bg-gray-800 disabled:opacity-40 transition-colors"
-          >
-            검색
-          </button>
         </div>
 
         {/* 필터 영역 */}
