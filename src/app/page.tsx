@@ -19,11 +19,11 @@ type Decision = {
   order_summary: string;
   decision_summary: string;
   judgment_summary: string;
-  reason: string;
+  reason?: string;
   order_text: string;
   category: string;
   view_url: string;
-  full_text: string;
+  full_text?: string;
 };
 
 const TOPICS = [
