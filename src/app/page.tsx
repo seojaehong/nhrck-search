@@ -51,29 +51,29 @@ const TOPICS = [
 ];
 
 const RESULTS = [
-  { label: "인정(권고)", style: "text-emerald-400 border-emerald-800 bg-emerald-950" },
-  { label: "불인정(기각)", style: "text-red-400 border-red-800 bg-red-950" },
-  { label: "각하", style: "text-neutral-400 border-neutral-700 bg-neutral-900" },
-  { label: "의견표명", style: "text-purple-400 border-purple-800 bg-purple-950" },
+  { label: "인정(권고)", style: "text-emerald-300/70 border-emerald-900/40 bg-emerald-950/30" },
+  { label: "불인정(기각)", style: "text-red-300/70 border-red-900/40 bg-red-950/30" },
+  { label: "각하", style: "text-neutral-400/70 border-neutral-700/40 bg-neutral-800/30" },
+  { label: "의견표명", style: "text-purple-300/70 border-purple-900/40 bg-purple-950/30" },
 ];
 
 const PAGE_SIZE = 20;
 
 function getResultStyle(r: string) {
-  if (r?.includes("인정(권고)")) return "text-emerald-400 bg-emerald-950/50 border-emerald-800/50";
-  if (r?.includes("불인정")) return "text-red-400 bg-red-950/50 border-red-800/50";
-  if (r?.includes("각하")) return "text-neutral-500 bg-neutral-800/50 border-neutral-700/50";
-  if (r?.includes("의견표명")) return "text-purple-400 bg-purple-950/50 border-purple-800/50";
-  return "text-neutral-500 bg-neutral-800/50 border-neutral-700/50";
+  if (r?.includes("인정(권고)")) return "text-emerald-300/60 bg-emerald-950/20 border-emerald-800/30";
+  if (r?.includes("불인정")) return "text-red-300/60 bg-red-950/20 border-red-800/30";
+  if (r?.includes("각하")) return "text-neutral-400/60 bg-neutral-800/20 border-neutral-700/30";
+  if (r?.includes("의견표명")) return "text-purple-300/60 bg-purple-950/20 border-purple-800/30";
+  return "text-neutral-400/60 bg-neutral-800/20 border-neutral-700/30";
 }
 
 function getTopicStyle(t: string) {
-  if (["성희롱", "성폭력"].includes(t)) return "text-rose-400 bg-rose-950/50 border-rose-800/50";
-  if (["성차별", "차별"].includes(t)) return "text-amber-400 bg-amber-950/50 border-amber-800/50";
-  if (t === "괴롭힘") return "text-orange-400 bg-orange-950/50 border-orange-800/50";
-  if (t === "장애차별") return "text-violet-400 bg-violet-950/50 border-violet-800/50";
-  if (t === "인권침해") return "text-blue-400 bg-blue-950/50 border-blue-800/50";
-  return "text-neutral-500 bg-neutral-800/50 border-neutral-700/50";
+  if (["성희롱", "성폭력"].includes(t)) return "text-rose-300/60 bg-rose-950/20 border-rose-800/30";
+  if (["성차별", "차별"].includes(t)) return "text-amber-300/60 bg-amber-950/20 border-amber-800/30";
+  if (t === "괴롭힘") return "text-orange-300/60 bg-orange-950/20 border-orange-800/30";
+  if (t === "장애차별") return "text-violet-300/60 bg-violet-950/20 border-violet-800/30";
+  if (t === "인권침해") return "text-blue-300/60 bg-blue-950/20 border-blue-800/30";
+  return "text-neutral-400/60 bg-neutral-800/20 border-neutral-700/30";
 }
 
 // ── Auto-resize textarea hook ──
