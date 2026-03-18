@@ -51,29 +51,24 @@ const TOPICS = [
 ];
 
 const RESULTS = [
-  { label: "인정(권고)", style: "text-emerald-300/70 border-emerald-900/40 bg-emerald-950/30" },
-  { label: "불인정(기각)", style: "text-red-300/70 border-red-900/40 bg-red-950/30" },
-  { label: "각하", style: "text-neutral-400/70 border-neutral-700/40 bg-neutral-800/30" },
-  { label: "의견표명", style: "text-purple-300/70 border-purple-900/40 bg-purple-950/30" },
+  { label: "인정(권고)", style: "text-neutral-300 border-neutral-700/50 bg-neutral-800/40" },
+  { label: "불인정(기각)", style: "text-neutral-400 border-neutral-700/50 bg-neutral-800/40" },
+  { label: "각하", style: "text-neutral-500 border-neutral-700/40 bg-neutral-800/30" },
+  { label: "의견표명", style: "text-neutral-400 border-neutral-700/50 bg-neutral-800/40" },
 ];
 
 const PAGE_SIZE = 20;
 
 function getResultStyle(r: string) {
-  if (r?.includes("인정(권고)")) return "text-emerald-300/60 bg-emerald-950/20 border-emerald-800/30";
-  if (r?.includes("불인정")) return "text-red-300/60 bg-red-950/20 border-red-800/30";
-  if (r?.includes("각하")) return "text-neutral-400/60 bg-neutral-800/20 border-neutral-700/30";
-  if (r?.includes("의견표명")) return "text-purple-300/60 bg-purple-950/20 border-purple-800/30";
-  return "text-neutral-400/60 bg-neutral-800/20 border-neutral-700/30";
+  if (r?.includes("인정(권고)")) return "text-neutral-300 bg-neutral-800/30 border-neutral-700/40";
+  if (r?.includes("불인정")) return "text-neutral-400 bg-neutral-800/30 border-neutral-700/40";
+  if (r?.includes("각하")) return "text-neutral-500 bg-neutral-800/20 border-neutral-700/30";
+  if (r?.includes("의견표명")) return "text-neutral-400 bg-neutral-800/30 border-neutral-700/40";
+  return "text-neutral-500 bg-neutral-800/20 border-neutral-700/30";
 }
 
 function getTopicStyle(t: string) {
-  if (["성희롱", "성폭력"].includes(t)) return "text-rose-300/60 bg-rose-950/20 border-rose-800/30";
-  if (["성차별", "차별"].includes(t)) return "text-amber-300/60 bg-amber-950/20 border-amber-800/30";
-  if (t === "괴롭힘") return "text-orange-300/60 bg-orange-950/20 border-orange-800/30";
-  if (t === "장애차별") return "text-violet-300/60 bg-violet-950/20 border-violet-800/30";
-  if (t === "인권침해") return "text-blue-300/60 bg-blue-950/20 border-blue-800/30";
-  return "text-neutral-400/60 bg-neutral-800/20 border-neutral-700/30";
+  return "text-neutral-400 bg-neutral-800/30 border-neutral-700/40";
 }
 
 // ── Auto-resize textarea hook ──
